@@ -1,0 +1,21 @@
+pkgbase = zulu-16-bin
+	pkgdesc = Azul Zulu builds of OpenJDK are open source, TCK-tested and certified builds of OpenJDK.
+	pkgver = 16.0.2
+	pkgrel = 1
+	url = https://www.azul.com/downloads/
+	install = zulu-16-bin.install
+	arch = x86_64
+	license = custom
+	depends = java-environment-common>=3
+	depends = java-runtime-common>=3
+	depends = ca-certificates-utils
+	provides = java-environment=16
+	provides = java-environment-openjdk=16
+	provides = java-runtime-headless=16
+	provides = java-runtime-headless-openjdk=16
+	provides = java-runtime=16
+	provides = java-runtime-openjdk=16
+	source = https://cdn.azul.com/zulu/bin/zulu16.32.15-ca-jdk16.0.2-linux_x64.tar.gz
+	sha256sums = 8eb9764ed708d6953bf77e8f04c03260801e87a1fe7b85b41648dab2e99ff31b
+
+pkgname = zulu-16-bin
