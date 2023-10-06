@@ -18,7 +18,7 @@ source=("obsidian.sh"
 )
 sha256sums=('133128c6e82cf82eae49f70db6e6a32b71e0521aec7f8e7c296d72fd0ad4056f'
             'be67713e873a5935d910efc6f6005c104b35c7b3a002dfcb5643fd185d1b0056'
-            '8e19bace215a267bf8a6b3d27ce9c9fc46c84537fdae7bf30095719d5aa6584e')
+            'a854907abdfb364877037a150053ffd2a5f33d627b4aa63619803a6f589a6261')
 
 prepare() {
     cd "$srcdir"
