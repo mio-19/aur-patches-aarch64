@@ -19,7 +19,7 @@ pkgname=(glibc glibc-locales)
 pkgver=2.38
 _commit=750a45a783906a19591fb8ff6b7841470f1f5701
 pkgrel=7
-arch=(x86_64)
+arch=(aarch64)
 url='https://www.gnu.org/software/libc'
 license=(GPL LGPL)
 makedepends=(git gd python)
@@ -65,8 +65,6 @@ build() {
       --disable-profile
       --disable-werror
   )
-
-  cd "${srcdir}"/glibc-build
 
   # ALARM: Specify build host types
   [[ $CARCH == "armv7h" ]] && _configure_flags+=(--host=armv7l-unknown-linux-gnueabihf --build=armv7l-unknown-linux-gnueabihf)
