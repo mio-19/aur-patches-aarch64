@@ -1,0 +1,4 @@
+#!/bin/sh
+export LD_LIBRARY_PATH=/opt/115pc/lib:$LD_LIBRARY_PATH
+export PATH="/opt/115pc:$PATH"
+exec box64 /opt/115pc/115
