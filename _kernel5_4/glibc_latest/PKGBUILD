@@ -134,7 +134,7 @@ check() (
   _skip_test tst-process_mrelease    sysdeps/unix/sysv/linux/Makefile
   _skip_test tst-adjtime             time/Makefile
 
-  #make -O check
+  make -O check
 )
 
 package_glibc() {
