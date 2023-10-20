@@ -1,0 +1,849 @@
+From 885471e4050d5090a8a5a8ccf469e3eae16cb62c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E6=BE=AA?= <mio@mio19.uk>
+Date: Fri, 20 Oct 2023 21:33:09 +0800
+Subject: [PATCH 2/2] Revert "posix: Consolidate fork implementation"
+
+This reverts commit 9a7565403758f65c07fe3705e966381d9cfd35b6.
+---
+ include/unistd.h                      |   2 -
+ posix/Makefile                        |   3 +-
+ posix/_Fork.c                         |  34 ----
+ posix/fork.c                          | 125 ++----------
+ sysdeps/generic/fork.h                |  32 ---
+ sysdeps/mach/hurd/{_Fork.c => fork.c} |  21 +-
+ sysdeps/nptl/_Fork.c                  |  52 -----
+ sysdeps/nptl/fork.c                   | 269 ++++++++++++++++++++++++++
+ sysdeps/nptl/fork.h                   | 153 ---------------
+ sysdeps/unix/sysv/linux/arch-fork.h   |   3 -
+ 10 files changed, 302 insertions(+), 392 deletions(-)
+ delete mode 100644 posix/_Fork.c
+ delete mode 100644 sysdeps/generic/fork.h
+ rename sysdeps/mach/hurd/{_Fork.c => fork.c} (98%)
+ delete mode 100644 sysdeps/nptl/_Fork.c
+ create mode 100644 sysdeps/nptl/fork.c
+ delete mode 100644 sysdeps/nptl/fork.h
+
+diff --git a/include/unistd.h b/include/unistd.h
+index 7090169601..fdddc6f786 100644
+--- a/include/unistd.h
++++ b/include/unistd.h
+@@ -143,8 +143,6 @@ extern __pid_t __vfork (void);
+ libc_hidden_proto (__vfork)
+ extern int __ttyname_r (int __fd, char *__buf, size_t __buflen);
+ libc_hidden_proto (__ttyname_r)
+-extern __pid_t _Fork (void);
+-libc_hidden_proto (_Fork);
+ extern int __isatty (int __fd) attribute_hidden;
+ extern int __link (const char *__from, const char *__to);
+ extern int __symlink (const char *__from, const char *__to);
+diff --git a/posix/Makefile b/posix/Makefile
+index a8ccfc6436..e66201f49e 100644
+--- a/posix/Makefile
++++ b/posix/Makefile
+@@ -39,7 +39,7 @@ routines :=								      \
+ 	times								      \
+ 	wait waitpid wait3 wait4 waitid					      \
+ 	alarm sleep pause nanosleep					      \
+-	fork _Fork vfork _exit register-atfork				      \
++	fork vfork _exit register-atfork				      \
+ 	execve fexecve execv execle execl execvp execlp execvpe		      \
+ 	getpid getppid							      \
+ 	getuid geteuid getgid getegid getgroups setuid setgid group_member    \
+@@ -279,7 +279,6 @@ CFLAGS-execl.os = -fomit-frame-pointer
+ CFLAGS-execvp.os = -fomit-frame-pointer
+ CFLAGS-execlp.os = -fomit-frame-pointer
+ CFLAGS-nanosleep.c += -fexceptions -fasynchronous-unwind-tables
+-CFLAGS-fork.c = $(libio-mtsafe)
+ 
+ tstgetopt-ARGS = -a -b -cfoobar --required foobar --optional=bazbug \
+ 		--none random --col --color --colour
+diff --git a/posix/_Fork.c b/posix/_Fork.c
+deleted file mode 100644
+index 2aeaf8d4bb..0000000000
+--- a/posix/_Fork.c
++++ /dev/null
+@@ -1,34 +0,0 @@
+-/* _Fork implementation.  Generic version.
+-   Copyright (C) 2021-2022 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library; if not, see
+-   <https://www.gnu.org/licenses/>.  */
+-
+-#include <errno.h>
+-#include <unistd.h>
+-
+-/* Clone the calling process, creating an exact copy.  Return -1 for errors,
+-   0 to the new process, and the process ID of the new process to the
+-   old process.
+-   Different than fork, this functions is marked as async-signal-safe by
+-   POSIX (by Austin Group issue 62).  */
+-pid_t
+-_Fork (void)
+-{
+-  __set_errno (ENOSYS);
+-  return -1;
+-}
+-libc_hidden_def (_Fork)
+-stub_warning (_Fork)
+diff --git a/posix/fork.c b/posix/fork.c
+index 872f543462..05bda04ac5 100644
+--- a/posix/fork.c
++++ b/posix/fork.c
+@@ -1,5 +1,4 @@
+-/* fork - create a child process.
+-   Copyright (C) 1991-2022 Free Software Foundation, Inc.
++/* Copyright (C) 1991-2021 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+ 
+    The GNU C Library is free software; you can redistribute it and/or
+@@ -16,118 +15,20 @@
+    License along with the GNU C Library; if not, see
+    <https://www.gnu.org/licenses/>.  */
+ 
+-#include <fork.h>
+-#include <libio/libioP.h>
+-#include <ldsodefs.h>
+-#include <malloc/malloc-internal.h>
+-#include <nss/nss_database.h>
+-#include <register-atfork.h>
+-#include <stdio-lock.h>
+-#include <sys/single_threaded.h>
+-#include <unwind-link.h>
++#include <errno.h>
++#include <unistd.h>
+ 
+-static void
+-fresetlockfiles (void)
+-{
+-  _IO_ITER i;
+-
+-  for (i = _IO_iter_begin(); i != _IO_iter_end(); i = _IO_iter_next(i))
+-    if ((_IO_iter_file (i)->_flags & _IO_USER_LOCK) == 0)
+-      _IO_lock_init (*((_IO_lock_t *) _IO_iter_file(i)->_lock));
+-}
+ 
+-pid_t
+-__libc_fork (void)
++/* Clone the calling process, creating an exact copy.
++   Return -1 for errors, 0 to the new process,
++   and the process ID of the new process to the old process.  */
++int
++__fork (void)
+ {
+-  /* Determine if we are running multiple threads.  We skip some fork
+-     handlers in the single-thread case, to make fork safer to use in
+-     signal handlers.  */
+-  bool multiple_threads = __libc_single_threaded == 0;
+-
+-  __run_fork_handlers (atfork_run_prepare, multiple_threads);
+-
+-  struct nss_database_data nss_database_data;
+-
+-  /* If we are not running multiple threads, we do not have to
+-     preserve lock state.  If fork runs from a signal handler, only
+-     async-signal-safe functions can be used in the child.  These data
+-     structures are only used by unsafe functions, so their state does
+-     not matter if fork was called from a signal handler.  */
+-  if (multiple_threads)
+-    {
+-      call_function_static_weak (__nss_database_fork_prepare_parent,
+-				 &nss_database_data);
+-
+-      _IO_list_lock ();
+-
+-      /* Acquire malloc locks.  This needs to come last because fork
+-	 handlers may use malloc, and the libio list lock has an
+-	 indirect malloc dependency as well (via the getdelim
+-	 function).  */
+-      call_function_static_weak (__malloc_fork_lock_parent);
+-    }
+-
+-  pid_t pid = _Fork ();
+-
+-  if (pid == 0)
+-    {
+-      fork_system_setup ();
+-
+-      /* Reset the lock state in the multi-threaded case.  */
+-      if (multiple_threads)
+-	{
+-	  __libc_unwind_link_after_fork ();
+-
+-	  fork_system_setup_after_fork ();
+-
+-	  /* Release malloc locks.  */
+-	  call_function_static_weak (__malloc_fork_unlock_child);
+-
+-	  /* Reset the file list.  These are recursive mutexes.  */
+-	  fresetlockfiles ();
+-
+-	  /* Reset locks in the I/O code.  */
+-	  _IO_list_resetlock ();
+-
+-	  call_function_static_weak (__nss_database_fork_subprocess,
+-				     &nss_database_data);
+-	}
+-
+-      /* Reset the lock the dynamic loader uses to protect its data.  */
+-      __rtld_lock_initialize (GL(dl_load_lock));
+-
+-      /* Reset the lock protecting dynamic TLS related data.  */
+-      __rtld_lock_initialize (GL(dl_load_tls_lock));
+-
+-      reclaim_stacks ();
+-
+-      /* Run the handlers registered for the child.  */
+-      __run_fork_handlers (atfork_run_child, multiple_threads);
+-    }
+-  else
+-    {
+-      /* If _Fork failed, preserve its errno value.  */
+-      int save_errno = errno;
+-
+-      /* Release acquired locks in the multi-threaded case.  */
+-      if (multiple_threads)
+-	{
+-	  /* Release malloc locks, parent process variant.  */
+-	  call_function_static_weak (__malloc_fork_unlock_parent);
+-
+-	  /* We execute this even if the 'fork' call failed.  */
+-	  _IO_list_unlock ();
+-	}
+-
+-      /* Run the handlers registered for the parent.  */
+-      __run_fork_handlers (atfork_run_parent, multiple_threads);
+-
+-      if (pid < 0)
+-	__set_errno (save_errno);
+-    }
+-
+-  return pid;
++  __set_errno (ENOSYS);
++  return -1;
+ }
+-weak_alias (__libc_fork, __fork)
+ libc_hidden_def (__fork)
+-weak_alias (__libc_fork, fork)
++stub_warning (fork)
++
++weak_alias (__fork, fork)
+diff --git a/sysdeps/generic/fork.h b/sysdeps/generic/fork.h
+deleted file mode 100644
+index f221ae6835..0000000000
+--- a/sysdeps/generic/fork.h
++++ /dev/null
+@@ -1,32 +0,0 @@
+-/* System specific fork hooks.  Generic version.
+-   Copyright (C) 2021-2022 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library; if not, see
+-   <https://www.gnu.org/licenses/>.  */
+-
+-static inline void
+-fork_system_setup (void)
+-{
+-}
+-
+-static inline void
+-fork_system_setup_after_fork (void)
+-{
+-}
+-
+-static inline void
+-reclaim_stacks (void)
+-{
+-}
+diff --git a/sysdeps/mach/hurd/_Fork.c b/sysdeps/mach/hurd/fork.c
+similarity index 98%
+rename from sysdeps/mach/hurd/_Fork.c
+rename to sysdeps/mach/hurd/fork.c
+index e60b86fab1..19d8a36cf7 100644
+--- a/sysdeps/mach/hurd/_Fork.c
++++ b/sysdeps/mach/hurd/fork.c
+@@ -58,13 +58,16 @@ DEFINE_HOOK (_hurd_fork_parent_hook, (void));
+    Return -1 for errors, 0 to the new process,
+    and the process ID of the new process to the old process.  */
+ pid_t
+-_Fork (void)
++__fork (void)
+ {
+   jmp_buf env;
+   pid_t pid;
+   size_t i;
+   error_t err;
+   struct hurd_sigstate *volatile ss;
++  struct nss_database_data nss_database_data;
++
++  __run_fork_handlers (atfork_run_prepare, true);
+ 
+   ss = _hurd_self_sigstate ();
+ retry:
+@@ -105,6 +108,9 @@ retry:
+       /* Run things that prepare for forking before we create the task.  */
+       RUN_HOOK (_hurd_fork_prepare_hook, ());
+ 
++      call_function_static_weak (__nss_database_fork_prepare_parent,
++				 &nss_database_data);
++
+       /* Lock things that want to be locked before we fork.  */
+       {
+ 	void *const *p;
+@@ -662,6 +668,9 @@ retry:
+       _hurd_malloc_fork_child ();
+       call_function_static_weak (__malloc_fork_unlock_child);
+ 
++      call_function_static_weak (__nss_database_fork_subprocess,
++				 &nss_database_data);
++
+       /* Run things that want to run in the child task to set up.  */
+       RUN_HOOK (_hurd_fork_child_hook, ());
+ 
+@@ -712,6 +721,14 @@ retry:
+     /* Got a signal while inside an RPC of the critical section, retry again */
+     goto retry;
+ 
++  if (!err)
++    {
++      __run_fork_handlers (pid == 0 ? atfork_run_child : atfork_run_parent,
++			   true);
++    }
++
+   return err ? __hurd_fail (err) : pid;
+ }
+-libc_hidden_def (_Fork)
++libc_hidden_def (__fork)
++
++weak_alias (__fork, fork)
+diff --git a/sysdeps/nptl/_Fork.c b/sysdeps/nptl/_Fork.c
+deleted file mode 100644
+index 692a3fc02f..0000000000
+--- a/sysdeps/nptl/_Fork.c
++++ /dev/null
+@@ -1,52 +0,0 @@
+-/* _Fork implementation.  Linux version.
+-   Copyright (C) 2021-2022 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library; if not, see
+-   <https://www.gnu.org/licenses/>.  */
+-
+-#include <arch-fork.h>
+-#include <pthreadP.h>
+-
+-/* Pointer to the fork generation counter in the thread library.  */
+-extern unsigned long int *__fork_generation_pointer attribute_hidden;
+-
+-pid_t
+-_Fork (void)
+-{
+-  pid_t pid = arch_fork (&THREAD_SELF->tid);
+-  if (pid == 0)
+-    {
+-      struct pthread *self = THREAD_SELF;
+-
+-      /* Initialize the robust mutex list setting in the kernel which has
+-	 been reset during the fork.  We do not check for errors because if
+-	 it fails here, it must have failed at process startup as well and
+-	 nobody could have used robust mutexes.
+-	 Before we do that, we have to clear the list of robust mutexes
+-	 because we do not inherit ownership of mutexes from the parent.
+-	 We do not have to set self->robust_head.futex_offset since we do
+-	 inherit the correct value from the parent.  We do not need to clear
+-	 the pending operation because it must have been zero when fork was
+-	 called.  */
+-#if __PTHREAD_MUTEX_HAVE_PREV
+-      self->robust_prev = &self->robust_head;
+-#endif
+-      self->robust_head.list = &self->robust_head;
+-      INTERNAL_SYSCALL_CALL (set_robust_list, &self->robust_head,
+-			     sizeof (struct robust_list_head));
+-    }
+-  return pid;
+-}
+-libc_hidden_def (_Fork)
+diff --git a/sysdeps/nptl/fork.c b/sysdeps/nptl/fork.c
+new file mode 100644
+index 0000000000..73bf135d5e
+--- /dev/null
++++ b/sysdeps/nptl/fork.c
+@@ -0,0 +1,269 @@
++/* Copyright (C) 2002-2021 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++   Contributed by Ulrich Drepper <drepper@redhat.com>, 2002.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <assert.h>
++#include <kernel-posix-timers.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <sys/types.h>
++#include <sysdep.h>
++#include <libio/libioP.h>
++#include <tls.h>
++#include <hp-timing.h>
++#include <ldsodefs.h>
++#include <stdio-lock.h>
++#include <atomic.h>
++#include <pthreadP.h>
++#include <register-atfork.h>
++#include <arch-fork.h>
++#include <futex-internal.h>
++#include <malloc/malloc-internal.h>
++#include <nss/nss_database.h>
++#include <unwind-link.h>
++#include <sys/single_threaded.h>
++#include <list.h>
++#include <mqueue.h>
++
++static void
++fresetlockfiles (void)
++{
++  _IO_ITER i;
++
++  for (i = _IO_iter_begin(); i != _IO_iter_end(); i = _IO_iter_next(i))
++    if ((_IO_iter_file (i)->_flags & _IO_USER_LOCK) == 0)
++      _IO_lock_init (*((_IO_lock_t *) _IO_iter_file(i)->_lock));
++}
++
++/* In case of a fork() call the memory allocation in the child will be
++   the same but only one thread is running.  All stacks except that of
++   the one running thread are not used anymore.  We have to recycle
++   them.  */
++static void
++reclaim_stacks (void)
++{
++  struct pthread *self = (struct pthread *) THREAD_SELF;
++
++  /* No locking necessary.  The caller is the only stack in use.  But
++     we have to be aware that we might have interrupted a list
++     operation.  */
++
++  if (GL (dl_in_flight_stack) != 0)
++    {
++      bool add_p = GL (dl_in_flight_stack) & 1;
++      list_t *elem = (list_t *) (GL (dl_in_flight_stack) & ~(uintptr_t) 1);
++
++      if (add_p)
++	{
++	  /* We always add at the beginning of the list.  So in this case we
++	     only need to check the beginning of these lists to see if the
++	     pointers at the head of the list are inconsistent.  */
++	  list_t *l = NULL;
++
++	  if (GL (dl_stack_used).next->prev != &GL (dl_stack_used))
++	    l = &GL (dl_stack_used);
++	  else if (GL (dl_stack_cache).next->prev != &GL (dl_stack_cache))
++	    l = &GL (dl_stack_cache);
++
++	  if (l != NULL)
++	    {
++	      assert (l->next->prev == elem);
++	      elem->next = l->next;
++	      elem->prev = l;
++	      l->next = elem;
++	    }
++	}
++      else
++	{
++	  /* We can simply always replay the delete operation.  */
++	  elem->next->prev = elem->prev;
++	  elem->prev->next = elem->next;
++	}
++
++      GL (dl_in_flight_stack) = 0;
++    }
++
++  /* Mark all stacks except the still running one as free.  */
++  list_t *runp;
++  list_for_each (runp, &GL (dl_stack_used))
++    {
++      struct pthread *curp = list_entry (runp, struct pthread, list);
++      if (curp != self)
++	{
++	  /* This marks the stack as free.  */
++	  curp->tid = 0;
++
++	  /* Account for the size of the stack.  */
++	  GL (dl_stack_cache_actsize) += curp->stackblock_size;
++
++	  if (curp->specific_used)
++	    {
++	      /* Clear the thread-specific data.  */
++	      memset (curp->specific_1stblock, '\0',
++		      sizeof (curp->specific_1stblock));
++
++	      curp->specific_used = false;
++
++	      for (size_t cnt = 1; cnt < PTHREAD_KEY_1STLEVEL_SIZE; ++cnt)
++		if (curp->specific[cnt] != NULL)
++		  {
++		    memset (curp->specific[cnt], '\0',
++			    sizeof (curp->specific_1stblock));
++
++		    /* We have allocated the block which we do not
++		       free here so re-set the bit.  */
++		    curp->specific_used = true;
++		  }
++	    }
++	}
++    }
++
++  /* Add the stack of all running threads to the cache.  */
++  list_splice (&GL (dl_stack_used), &GL (dl_stack_cache));
++
++  /* Remove the entry for the current thread to from the cache list
++     and add it to the list of running threads.  Which of the two
++     lists is decided by the user_stack flag.  */
++  list_del (&self->list);
++
++  /* Re-initialize the lists for all the threads.  */
++  INIT_LIST_HEAD (&GL (dl_stack_used));
++  INIT_LIST_HEAD (&GL (dl_stack_user));
++
++  if (__glibc_unlikely (THREAD_GETMEM (self, user_stack)))
++    list_add (&self->list, &GL (dl_stack_user));
++  else
++    list_add (&self->list, &GL (dl_stack_used));
++}
++
++pid_t
++__libc_fork (void)
++{
++  pid_t pid;
++
++  /* Determine if we are running multiple threads.  We skip some fork
++     handlers in the single-thread case, to make fork safer to use in
++     signal handlers.  POSIX requires that fork is async-signal-safe,
++     but our current fork implementation is not.  */
++  bool multiple_threads = __libc_single_threaded == 0;
++
++  __run_fork_handlers (atfork_run_prepare, multiple_threads);
++
++  struct nss_database_data nss_database_data;
++
++  /* If we are not running multiple threads, we do not have to
++     preserve lock state.  If fork runs from a signal handler, only
++     async-signal-safe functions can be used in the child.  These data
++     structures are only used by unsafe functions, so their state does
++     not matter if fork was called from a signal handler.  */
++  if (multiple_threads)
++    {
++      call_function_static_weak (__nss_database_fork_prepare_parent,
++				 &nss_database_data);
++
++      _IO_list_lock ();
++
++      /* Acquire malloc locks.  This needs to come last because fork
++	 handlers may use malloc, and the libio list lock has an
++	 indirect malloc dependency as well (via the getdelim
++	 function).  */
++      call_function_static_weak (__malloc_fork_lock_parent);
++    }
++
++  pid = arch_fork (&THREAD_SELF->tid);
++
++  if (pid == 0)
++    {
++      struct pthread *self = THREAD_SELF;
++
++      /* See __pthread_once.  */
++      __fork_generation += __PTHREAD_ONCE_FORK_GEN_INCR;
++
++      /* Initialize the robust mutex list setting in the kernel which has
++	 been reset during the fork.  We do not check for errors because if
++	 it fails here, it must have failed at process startup as well and
++	 nobody could have used robust mutexes.
++	 Before we do that, we have to clear the list of robust mutexes
++	 because we do not inherit ownership of mutexes from the parent.
++	 We do not have to set self->robust_head.futex_offset since we do
++	 inherit the correct value from the parent.  We do not need to clear
++	 the pending operation because it must have been zero when fork was
++	 called.  */
++#if __PTHREAD_MUTEX_HAVE_PREV
++      self->robust_prev = &self->robust_head;
++#endif
++      self->robust_head.list = &self->robust_head;
++      INTERNAL_SYSCALL_CALL (set_robust_list, &self->robust_head,
++			     sizeof (struct robust_list_head));
++
++      /* Reset the lock state in the multi-threaded case.  */
++      if (multiple_threads)
++	{
++	  __libc_unwind_link_after_fork ();
++
++	  /* There is one thread running.  */
++	  __nptl_nthreads = 1;
++
++	  /* Initialize thread library locks.  */
++	  GL (dl_stack_cache_lock) = LLL_LOCK_INITIALIZER;
++	  __default_pthread_attr_lock = LLL_LOCK_INITIALIZER;
++
++   call_function_static_weak (__mq_notify_fork_subprocess);
++   call_function_static_weak (__timer_fork_subprocess);
++
++	  /* Release malloc locks.  */
++	  call_function_static_weak (__malloc_fork_unlock_child);
++
++	  /* Reset the file list.  These are recursive mutexes.  */
++	  fresetlockfiles ();
++
++	  /* Reset locks in the I/O code.  */
++	  _IO_list_resetlock ();
++
++	  call_function_static_weak (__nss_database_fork_subprocess,
++				     &nss_database_data);
++	}
++
++      /* Reset the lock the dynamic loader uses to protect its data.  */
++      __rtld_lock_initialize (GL(dl_load_lock));
++
++      reclaim_stacks ();
++
++      /* Run the handlers registered for the child.  */
++      __run_fork_handlers (atfork_run_child, multiple_threads);
++    }
++  else
++    {
++      /* Release acquired locks in the multi-threaded case.  */
++      if (multiple_threads)
++	{
++	  /* Release malloc locks, parent process variant.  */
++	  call_function_static_weak (__malloc_fork_unlock_parent);
++
++	  /* We execute this even if the 'fork' call failed.  */
++	  _IO_list_unlock ();
++	}
++
++      /* Run the handlers registered for the parent.  */
++      __run_fork_handlers (atfork_run_parent, multiple_threads);
++    }
++
++  return pid;
++}
++weak_alias (__libc_fork, __fork)
++libc_hidden_def (__fork)
++weak_alias (__libc_fork, fork)
+diff --git a/sysdeps/nptl/fork.h b/sysdeps/nptl/fork.h
+deleted file mode 100644
+index ddc1fb9c3a..0000000000
+--- a/sysdeps/nptl/fork.h
++++ /dev/null
+@@ -1,153 +0,0 @@
+-/* System specific fork hooks.  Linux version.
+-   Copyright (C) 2021-2022 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library; if not, see
+-   <https://www.gnu.org/licenses/>.  */
+-
+-#ifndef _FORK_H
+-#define _FORK_H
+-
+-#include <assert.h>
+-#include <kernel-posix-timers.h>
+-#include <ldsodefs.h>
+-#include <list.h>
+-#include <mqueue.h>
+-#include <pthreadP.h>
+-#include <sysdep.h>
+-
+-static inline void
+-fork_system_setup (void)
+-{
+-  /* See __pthread_once.  */
+-  __fork_generation += __PTHREAD_ONCE_FORK_GEN_INCR;
+-}
+-
+-static void
+-fork_system_setup_after_fork (void)
+-{
+-  /* There is one thread running.  */
+-  __nptl_nthreads = 1;
+-
+-  /* Initialize thread library locks.  */
+-  GL (dl_stack_cache_lock) = LLL_LOCK_INITIALIZER;
+-  __default_pthread_attr_lock = LLL_LOCK_INITIALIZER;
+-
+-  call_function_static_weak (__mq_notify_fork_subprocess);
+-  call_function_static_weak (__timer_fork_subprocess);
+-}
+-
+-/* In case of a fork() call the memory allocation in the child will be
+-   the same but only one thread is running.  All stacks except that of
+-   the one running thread are not used anymore.  We have to recycle
+-   them.  */
+-static void
+-reclaim_stacks (void)
+-{
+-  struct pthread *self = (struct pthread *) THREAD_SELF;
+-
+-  /* No locking necessary.  The caller is the only stack in use.  But
+-     we have to be aware that we might have interrupted a list
+-     operation.  */
+-
+-  if (GL (dl_in_flight_stack) != 0)
+-    {
+-      bool add_p = GL (dl_in_flight_stack) & 1;
+-      list_t *elem = (list_t *) (GL (dl_in_flight_stack) & ~(uintptr_t) 1);
+-
+-      if (add_p)
+-	{
+-	  /* We always add at the beginning of the list.  So in this case we
+-	     only need to check the beginning of these lists to see if the
+-	     pointers at the head of the list are inconsistent.  */
+-	  list_t *l = NULL;
+-
+-	  if (GL (dl_stack_used).next->prev != &GL (dl_stack_used))
+-	    l = &GL (dl_stack_used);
+-	  else if (GL (dl_stack_cache).next->prev != &GL (dl_stack_cache))
+-	    l = &GL (dl_stack_cache);
+-
+-	  if (l != NULL)
+-	    {
+-	      assert (l->next->prev == elem);
+-	      elem->next = l->next;
+-	      elem->prev = l;
+-	      l->next = elem;
+-	    }
+-	}
+-      else
+-	{
+-	  /* We can simply always replay the delete operation.  */
+-	  elem->next->prev = elem->prev;
+-	  elem->prev->next = elem->next;
+-	}
+-
+-      GL (dl_in_flight_stack) = 0;
+-    }
+-
+-  /* Mark all stacks except the still running one as free.  */
+-  list_t *runp;
+-  list_for_each (runp, &GL (dl_stack_used))
+-    {
+-      struct pthread *curp = list_entry (runp, struct pthread, list);
+-      if (curp != self)
+-	{
+-	  /* This marks the stack as free.  */
+-	  curp->tid = 0;
+-
+-	  /* Account for the size of the stack.  */
+-	  GL (dl_stack_cache_actsize) += curp->stackblock_size;
+-
+-	  if (curp->specific_used)
+-	    {
+-	      /* Clear the thread-specific data.  */
+-	      memset (curp->specific_1stblock, '\0',
+-		      sizeof (curp->specific_1stblock));
+-
+-	      curp->specific_used = false;
+-
+-	      for (size_t cnt = 1; cnt < PTHREAD_KEY_1STLEVEL_SIZE; ++cnt)
+-		if (curp->specific[cnt] != NULL)
+-		  {
+-		    memset (curp->specific[cnt], '\0',
+-			    sizeof (curp->specific_1stblock));
+-
+-		    /* We have allocated the block which we do not
+-		       free here so re-set the bit.  */
+-		    curp->specific_used = true;
+-		  }
+-	    }
+-	}
+-    }
+-
+-  /* Add the stack of all running threads to the cache.  */
+-  list_splice (&GL (dl_stack_used), &GL (dl_stack_cache));
+-
+-  /* Remove the entry for the current thread to from the cache list
+-     and add it to the list of running threads.  Which of the two
+-     lists is decided by the user_stack flag.  */
+-  list_del (&self->list);
+-
+-  /* Re-initialize the lists for all the threads.  */
+-  INIT_LIST_HEAD (&GL (dl_stack_used));
+-  INIT_LIST_HEAD (&GL (dl_stack_user));
+-
+-  if (__glibc_unlikely (THREAD_GETMEM (self, user_stack)))
+-    list_add (&self->list, &GL (dl_stack_user));
+-  else
+-    list_add (&self->list, &GL (dl_stack_used));
+-}
+-
+-
+-#endif
+diff --git a/sysdeps/unix/sysv/linux/arch-fork.h b/sysdeps/unix/sysv/linux/arch-fork.h
+index 15058e9c6e..906cfb0bd6 100644
+--- a/sysdeps/unix/sysv/linux/arch-fork.h
++++ b/sysdeps/unix/sysv/linux/arch-fork.h
+@@ -19,9 +19,6 @@
+ #ifndef __ARCH_FORK_H
+ #define __ARCH_FORK_H
+ 
+-#include <sysdep.h>
+-#include <sched.h>
+-#include <signal.h>
+ #include <unistd.h>
+ 
+ /* Call the clone syscall with fork semantic.  The CTID address is used
+-- 
+2.42.0
+

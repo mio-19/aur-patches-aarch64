@@ -1,0 +1,24 @@
+From e281e7031eeb1ed7edca361f82673123c5300b97 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E6=BE=AA?= <mio@mio19.uk>
+Date: Fri, 20 Oct 2023 21:07:40 +0800
+Subject: [PATCH] fork as _Fork
+
+---
+ posix/fork.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/posix/fork.c b/posix/fork.c
+index 6b50c091f9..fb992c546b 100644
+--- a/posix/fork.c
++++ b/posix/fork.c
+@@ -39,6 +39,7 @@ fresetlockfiles (void)
+ pid_t
+ __libc_fork (void)
+ {
++  return _Fork ();
+   /* Determine if we are running multiple threads.  We skip some fork
+      handlers in the single-thread case, to make fork safer to use in
+      signal handlers.  Although POSIX has dropped async-signal-safe
+-- 
+2.42.0
+
