@@ -18,7 +18,7 @@ pkgname=glibc
 pkgver=2.35
 _commit=28ea43f8d64f0dd1f2de75525157730e1532e600
 pkgrel=5.1
-arch=(x86_64)
+arch=(aarch64)
 url='https://www.gnu.org/software/libc'
 license=(GPL LGPL)
 makedepends=(git gd python)
@@ -28,6 +28,7 @@ source=(git+https://sourceware.org/git/glibc.git#commit=${_commit}
         locale-gen
         sdt.h sdt-config.h
         disable-clone3.diff
+        clone3.diff
 )
 validpgpkeys=(7273542B39962DF7B299931416792B4EA25340F8 # Carlos O'Donell
               BC7C7372637EC10C57D7AA6579C43DFBF1CF2187) # Siddhesh Poyarekar
@@ -48,7 +49,8 @@ prepare() {
   # Can be removed when eletron{9,11,12} and discord are removed or patched:
   # https://github.com/electron/electron/commit/993ecb5bdd5c57024c8718ca6203a8f924d6d574
   # Patch src: https://patchwork.ozlabs.org/project/glibc/patch/87eebkf8ph.fsf@oldenburg.str.redhat.com/
-  patch -Np1 -i "${srcdir}"/disable-clone3.diff
+  #patch -Np1 -i "${srcdir}"/disable-clone3.diff
+  patch -Np1 -i "${srcdir}"/clone3.diff
 }
 
 build() {
@@ -63,6 +65,7 @@ build() {
       --disable-profile
       --disable-crypt
       --disable-werror
+      --enable-kernel=5.4
   )
 
   cd "$srcdir/glibc-build"
