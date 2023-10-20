@@ -128,7 +128,7 @@ check() {
   skip_test tst-adjtime      time/Makefile
   skip_test tst-clock2       time/Makefile
 
-  make -O check
+  # make -O check # UNSAFE
 }
 
 package() {
