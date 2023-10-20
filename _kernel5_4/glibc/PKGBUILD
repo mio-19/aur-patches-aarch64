@@ -68,6 +68,7 @@ build() {
       --disable-nscd
       --disable-profile
       --disable-werror
+      --enable-kernel=5.4
   )
 
   # ALARM: Specify build host types
