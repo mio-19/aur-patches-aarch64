@@ -11,7 +11,7 @@ pkgrel=3
 pkgdesc="Low level core library"
 url="https://wiki.gnome.org/Projects/GLib"
 license=(LGPL)
-arch=(x86_64)
+arch=(aarch64)
 depends=(
   libffi
   libsysprof-capture
