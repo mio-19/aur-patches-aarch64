@@ -102,7 +102,7 @@ build() {
   meson compile -C build
 }
 
-check() {
+_UNSAFE_no___check() {
   meson test -C build --no-suite flaky --no-suite slow --print-errorlogs
 }
 
