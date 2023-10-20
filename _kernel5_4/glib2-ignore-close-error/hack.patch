@@ -1,0 +1,40 @@
+From 49a299d27566532eb451bfc775f67d6670fcb951 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E6=BE=AA?= <mio@mio19.uk>
+Date: Fri, 20 Oct 2023 23:01:48 +0800
+Subject: [PATCH] dirty workaround for Android 5.4 gsi kernel
+
+---
+ glib/gspawn.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/glib/gspawn.c b/glib/gspawn.c
+index 3e2e6cf49..4ceca3e93 100644
+--- a/glib/gspawn.c
++++ b/glib/gspawn.c
+@@ -1896,17 +1896,17 @@ do_exec (gint                  child_err_report_fd,
+     {
+       if (child_setup == NULL && n_fds == 0)
+         {
+-          if (safe_dup2 (child_err_report_fd, 3) < 0)
+-            write_err_and_exit (child_err_report_fd, CHILD_DUPFD_FAILED);
++          safe_dup2 (child_err_report_fd, 3); //if (safe_dup2 (child_err_report_fd, 3) < 0)
++          //  write_err_and_exit (child_err_report_fd, CHILD_DUPFD_FAILED);
+           set_cloexec (GINT_TO_POINTER (0), 3);
+-          if (safe_closefrom (4) < 0)
+-            write_err_and_exit (child_err_report_fd, CHILD_CLOSE_FAILED);
++          safe_closefrom (4); //if (safe_closefrom (4) < 0)
++          //  write_err_and_exit (child_err_report_fd, CHILD_CLOSE_FAILED);
+           child_err_report_fd = 3;
+         }
+       else
+         {
+-          if (safe_fdwalk_set_cloexec (3) < 0)
+-            write_err_and_exit (child_err_report_fd, CHILD_CLOSE_FAILED);
++          safe_fdwalk_set_cloexec (3); //if (safe_fdwalk_set_cloexec (3) < 0)
++          //  write_err_and_exit (child_err_report_fd, CHILD_CLOSE_FAILED);
+         }
+     }
+   else
+-- 
+2.42.0
+
