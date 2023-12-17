@@ -1,0 +1,34 @@
+From ece3151ca9af83c7d4ef9ae79c6192e50765e02d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E6=BE=AA?= <mio@mio19.uk>
+Date: Sat, 21 Oct 2023 01:21:40 +0800
+Subject: [PATCH] disable close_range
+
+---
+ glib/gspawn.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/glib/gspawn.c b/glib/gspawn.c
+index 3e2e6cf49..944733994 100644
+--- a/glib/gspawn.c
++++ b/glib/gspawn.c
+@@ -1593,7 +1593,7 @@ safe_fdwalk_set_cloexec (int lowfd)
+ {
+   int ret;
+ 
+-#if defined(HAVE_CLOSE_RANGE) && defined(CLOSE_RANGE_CLOEXEC)
++#if defined(_NOPE___DISABLE_THIS__HAVE_CLOSE_RANGE) && defined(CLOSE_RANGE_CLOEXEC)
+   /* close_range() is available in Linux since kernel 5.9, and on FreeBSD at
+    * around the same time. It was designed for use in async-signal-safe
+    * situations: https://bugs.python.org/issue38061
+@@ -1623,7 +1623,7 @@ safe_closefrom (int lowfd)
+ {
+   int ret;
+ 
+-#if defined(HAVE_CLOSE_RANGE)
++#if defined(_NOPE___DISABLE_THIS__HAVE_CLOSE_RANGE)
+   /* close_range() is available in Linux since kernel 5.9, and on FreeBSD at
+    * around the same time. It was designed for use in async-signal-safe
+    * situations: https://bugs.python.org/issue38061
+-- 
+2.42.0
+
