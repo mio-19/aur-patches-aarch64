@@ -45,12 +45,14 @@ source=(
   0001-glib-compile-schemas-Remove-noisy-deprecation-warnin.patch
   gio-querymodules.hook
   glib-compile-schemas.hook
+  no.patch
 )
 b2sums=('SKIP'
         'SKIP'
         '94c73ca7070c239494873dd52d6ee09382bbb5b1201f7afd737cfa140b1a2fb0744b2c2831baf3943d1d072550c35888d21ce6f19f89481ff9d1a60d9a0b30e0'
         '14c9211c0557f6d8d9a914f1b18b7e0e23f79f4abde117cb03ab119b95bf9fa9d7a712aa0a29beb266468aeb352caa3a9e4540503cfc9fe0bbaf764371832a96'
-        'd30d349b4cb4407839d9074ce08f5259b8a5f3ca46769aabc621f17d15effdb89c4bf19bd23603f6df3d59f8d1adaded0f4bacd0333afcab782f2d048c882858')
+        'd30d349b4cb4407839d9074ce08f5259b8a5f3ca46769aabc621f17d15effdb89c4bf19bd23603f6df3d59f8d1adaded0f4bacd0333afcab782f2d048c882858'
+        '98773d007747034c7b7a257b634c613c4ecd8c9d4a9420ab4703b9691e2754e8b6027fa467ee36092938e0f335982c1d7dc4d713c1dc7812e0d79678c322f17c')
 
 
 pkgver() {
