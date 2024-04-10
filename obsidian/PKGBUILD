@@ -3,22 +3,23 @@
 # Contributor: Xuanwo <xuanwo@archlinuxcn.org>
 
 pkgname=obsidian
-pkgver=1.4.16
+pkgver=1.5.12
 pkgrel=1
 pkgdesc="A powerful knowledge base that works on top of a local folder of plain text Markdown files"
 arch=('aarch64')
 url="https://obsidian.md/"
 license=('custom:Commercial')
-depends=('zlib' 'hicolor-icon-theme' 'fuse' 'electron24-bin')
+depends=('zlib' 'hicolor-icon-theme' 'fuse' 'electron28-bin')
 makedepends=('asar')
+install=obsidian.install
 options=(!strip)
 source=("obsidian.sh"
         "obsidian.desktop"
         "https://github.com/obsidianmd/obsidian-releases/releases/download/v${pkgver}/obsidian-${pkgver}.tar.gz"
 )
-sha256sums=('133128c6e82cf82eae49f70db6e6a32b71e0521aec7f8e7c296d72fd0ad4056f'
+sha256sums=('b73e17b74983de0cf0df17e0a11ecd100af8a66c8afa8ca6f5ae816f458721df'
             'be67713e873a5935d910efc6f6005c104b35c7b3a002dfcb5643fd185d1b0056'
-            '3c128b1acdcc6726ab48c8969e3a98eddf5b42b2aedae2c0bcb52e7e91cbc5cc')
+            '5102e58cfede6442d3b87c17f8eca55d8f96cb660ad591095f52107c8bc12def')
 
 prepare() {
     cd "$srcdir"

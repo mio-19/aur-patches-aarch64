@@ -1,0 +1,22 @@
+pkgbase = obsidian
+	pkgdesc = A powerful knowledge base that works on top of a local folder of plain text Markdown files
+	pkgver = 1.5.12
+	pkgrel = 1
+	url = https://obsidian.md/
+	install = obsidian.install
+	arch = x86_64
+	license = custom:Commercial
+	makedepends = asar
+	depends = zlib
+	depends = hicolor-icon-theme
+	depends = fuse
+	depends = electron28
+	options = !strip
+	source = obsidian.sh
+	source = obsidian.desktop
+	source = https://github.com/obsidianmd/obsidian-releases/releases/download/v1.5.12/obsidian-1.5.12.tar.gz
+	sha256sums = b73e17b74983de0cf0df17e0a11ecd100af8a66c8afa8ca6f5ae816f458721df
+	sha256sums = be67713e873a5935d910efc6f6005c104b35c7b3a002dfcb5643fd185d1b0056
+	sha256sums = 5102e58cfede6442d3b87c17f8eca55d8f96cb660ad591095f52107c8bc12def
+
+pkgname = obsidian
