@@ -49,16 +49,16 @@ build() {
   cd "$srcdir"/${_pkgname}-${pkgver}
 
   cmake -G "Unix Makefiles" \
-    -DCMAKE_INSTALL_PREFIX=/usr \
-    -DCMAKE_INSTALL_SBINDIR=/usr/bin \
-    -DCMAKE_INSTALL_LIBEXECDIR=/usr/bin \
+    -DCMAKE_INSTALL_PREFIX=/opt/tigervnc \
+    -DCMAKE_INSTALL_SBINDIR=/opt/tigervnc/bin \
+    -DCMAKE_INSTALL_LIBEXECDIR=/opt/tigervnc/bin \
     -DBUILD_JAVA=TRUE \
     -DBUILD_VIEWER=false
   make
 
   cd unix/xserver
   autoreconf -fiv
-  CFLAGS="$CFLAGS -I/usr/include/libdrm" ./configure --prefix=/usr \
+  CFLAGS="$CFLAGS -I/usr/include/libdrm" ./configure --prefix=/opt/tigervnc \
 	--disable-static --without-dtrace \
 	--disable-xorg --disable-xnest --disable-xvfb --disable-dmx \
 	--disable-xwin --disable-xephyr --disable-kdrive --disable-xwayland \
@@ -74,4 +74,5 @@ package() {
   cd unix/xserver/hw/vnc
   make DESTDIR="$pkgdir" install
   install -Dm0755 "$srcdir"/Xsession "$pkgdir"/etc/X11/tigervnc/Xsession
+  mkdir -p "$pkgdir"/usr/lib/xorg/modules/extensions/ && cp "$pkgdir"/opt/tigervnc/lib/xorg/modules/extensions/* "$pkgdir"/usr/lib/xorg/modules/extensions/
 }
